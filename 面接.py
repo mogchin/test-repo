@@ -2291,15 +2291,20 @@ class GuideCountCog(commands.Cog):
         if msg_id:
             try:
                 target = await channel.fetch_message(msg_id)
-            except discord.NotFound:
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                logger.warning(f"GuideCountCog: メッセージ取得に失敗: {e}")
                 target = None
 
         if target is None:
-            async for hist in channel.history(limit=None):
-                if hist.author.id == self.bot.user.id and hist.embeds:
-                    if (hist.embeds[0].title or "").startswith(f"案内回数 {ym}"):
-                        target = hist
-                        break
+            try:
+                async for hist in channel.history(limit=None):
+                    if hist.author.id == self.bot.user.id and hist.embeds:
+                        if (hist.embeds[0].title or "").startswith(f"案内回数 {ym}"):
+                            target = hist
+                            break
+            except (discord.Forbidden, discord.HTTPException) as e:
+                logger.warning(f"GuideCountCog: 履歴取得に失敗: {e}")
+                target = None
 
         # ---- 送信 or 更新 ----
         if target:
