@@ -29,6 +29,8 @@ DATA_FILE = os.path.join(BASE_DIR, 'monthly_counts_data.json')
 DATA_FILE_PATH = os.path.join(BASE_DIR, 'interview_records.json')
 BAN_DATA_FILE = os.path.join(BASE_DIR, 'ban_data.json')
 LOG_CHANNEL_ID: int = 1306053871855996979
+# 案内カウント通知用チャンネル
+MONTHLY_COUNT_LOG_CHANNEL_ID: int = 1313073156256436244
 # ★ 追記: 自動キックした際のログ出力先チャンネル
 AUTO_KICK_LOG_CHANNEL_ID: int = 1361465393587163166
 
@@ -479,6 +481,8 @@ class DataManager:
         self.interview_records: List[Dict[str, Any]] = []
         self.interviewer_stats_message_ids: Dict[str, int] = {}
         self.monthly_stats_message_ids: Dict[str, int] = {}
+        # 月次案内カウントログメッセージID
+        self.monthly_count_msg_ids: Dict[str, int] = {}
         self.candidate_progress: Dict[str, Dict[str, Any]] = {}
         self.interview_channel_mapping: Dict[int, str] = {}
         self.dashboard_message_id: Optional[int] = None
@@ -491,6 +495,7 @@ class DataManager:
                 'interview_records': self.interview_records,
                 'interviewer_stats_message_ids': self.interviewer_stats_message_ids,
                 'monthly_stats_message_ids': self.monthly_stats_message_ids,
+                'monthly_count_msg_ids': self.monthly_count_msg_ids,
                 'candidate_progress': self.candidate_progress,
                 'interview_channel_mapping': {str(k): v for k, v in self.interview_channel_mapping.items()},
                 'dashboard_message_id': self.dashboard_message_id,
@@ -513,6 +518,7 @@ class DataManager:
                         self.interview_records = data
                         self.interviewer_stats_message_ids = {}
                         self.monthly_stats_message_ids = {}
+                        self.monthly_count_msg_ids = {}
                         self.candidate_progress = {}
                         self.interview_channel_mapping = {}
                         self.dashboard_message_id = None
@@ -521,6 +527,7 @@ class DataManager:
                         self.interview_records = data.get('interview_records', [])
                         self.interviewer_stats_message_ids = data.get('interviewer_stats_message_ids', {})
                         self.monthly_stats_message_ids = data.get('monthly_stats_message_ids', {})
+                        self.monthly_count_msg_ids = data.get('monthly_count_msg_ids', {})
                         self.candidate_progress = data.get('candidate_progress', {})
                         imap = data.get('interview_channel_mapping', {})
                         self.interview_channel_mapping = {int(k): v for k, v in imap.items()}
@@ -530,6 +537,7 @@ class DataManager:
                         self.interview_records = []
                         self.interviewer_stats_message_ids = {}
                         self.monthly_stats_message_ids = {}
+                        self.monthly_count_msg_ids = {}
                         self.candidate_progress = {}
                         self.interview_channel_mapping = {}
                         self.dashboard_message_id = None
@@ -1399,6 +1407,22 @@ class MonthlyCountCog(commands.Cog):
         self.monthly_messages: Dict[str, Optional[discord.Message]] = {}
         self.current_year_month: Optional[str] = None
         self.load_counts_data()
+        # 既存メッセージのロードを非同期で実行
+        self.bot.loop.create_task(self._initialize_messages())
+
+    async def _initialize_messages(self) -> None:
+        await self.bot.wait_until_ready()
+        channel = self.bot.get_channel(MONTHLY_COUNT_LOG_CHANNEL_ID)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            return
+        for ym, msg_id in data_manager.monthly_count_msg_ids.items():
+            self.monthly_messages[ym] = None
+            if msg_id:
+                try:
+                    msg = await channel.fetch_message(msg_id)
+                    self.monthly_messages[ym] = msg
+                except discord.NotFound:
+                    self.monthly_messages[ym] = None
 
     def load_counts_data(self):
         if os.path.isfile(DATA_FILE):
@@ -1455,22 +1479,65 @@ class MonthlyCountCog(commands.Cog):
             if ym not in self.monthly_counts_data:
                 self.monthly_counts_data[ym] = {}
             self.monthly_messages[ym] = None
-            channel = self.bot.get_channel(LOG_CHANNEL_ID)
+            channel = self.bot.get_channel(MONTHLY_COUNT_LOG_CHANNEL_ID)
             if channel and isinstance(channel, discord.TextChannel):
+                msg_id = data_manager.monthly_count_msg_ids.get(ym)
+                message = None
+                if msg_id:
+                    try:
+                        message = await channel.fetch_message(msg_id)
+                    except discord.NotFound:
+                        message = None
                 try:
-                    await channel.send(f"✨ **{ym}** の案内カウントを開始します。")
+                    if message:
+                        await message.edit(content=f"✨ **{ym}** の案内カウントを開始します。")
+                        self.monthly_messages[ym] = message
+                    else:
+                        sent = await channel.send(f"✨ **{ym}** の案内カウントを開始します。")
+                        self.monthly_messages[ym] = sent
+                        data_manager.monthly_count_msg_ids[ym] = sent.id
+                        await data_manager.save_data()
                 except discord.Forbidden:
-                    logger.error(f"チャンネル {LOG_CHANNEL_ID} への月替わり通知送信権限がありません。")
+                    logger.error(f"チャンネル {MONTHLY_COUNT_LOG_CHANNEL_ID} への月替わり通知送信権限がありません。")
                 except Exception as e:
-                    logger.error(f"チャンネル {LOG_CHANNEL_ID} への月替わり通知送信中にエラー: {e}")
+                    logger.error(f"チャンネル {MONTHLY_COUNT_LOG_CHANNEL_ID} への月替わり通知送信中にエラー: {e}")
             else:
-                logger.warning(f"月替わり通知用のチャンネル {LOG_CHANNEL_ID} が見つからないか、テキストチャンネルではありません。")
+                logger.warning(f"月替わり通知用のチャンネル {MONTHLY_COUNT_LOG_CHANNEL_ID} が見つからないか、テキストチャンネルではありません。")
             await self.update_log_message()
             self.save_counts_data()
 
     async def update_log_message(self):
-        # 実装略
-        pass
+        ym = self.current_year_month or f"{datetime.now(JST).year}-{datetime.now(JST).month:02d}"
+        channel = self.bot.get_channel(MONTHLY_COUNT_LOG_CHANNEL_ID)
+        if not channel or not isinstance(channel, discord.TextChannel):
+            logger.warning(f"案内カウント用チャンネル {MONTHLY_COUNT_LOG_CHANNEL_ID} が見つかりません。")
+            return
+
+        counts = self.monthly_counts_data.get(ym, {})
+        lines = [f"{info['name']}: {len(info.get('assigned', set()))} 件" for info in counts.values()]
+        content = f"📊 **{ym} 案内数**\n" + ("\n".join(lines) if lines else "まだ記録がありません。")
+
+        message = self.monthly_messages.get(ym)
+        if message is None:
+            msg_id = data_manager.monthly_count_msg_ids.get(ym)
+            if msg_id:
+                try:
+                    message = await channel.fetch_message(msg_id)
+                    self.monthly_messages[ym] = message
+                except discord.NotFound:
+                    message = None
+        try:
+            if message:
+                await message.edit(content=content)
+            else:
+                sent = await channel.send(content)
+                self.monthly_messages[ym] = sent
+                data_manager.monthly_count_msg_ids[ym] = sent.id
+                await data_manager.save_data()
+        except discord.Forbidden:
+            logger.error(f"チャンネル {MONTHLY_COUNT_LOG_CHANNEL_ID} へのメッセージ送信/編集権限がありません。")
+        except Exception as e:
+            logger.error(f"案内カウントログメッセージ送信/編集に失敗: {e}")
 
 
 # ------------------------------------------------
