@@ -2910,8 +2910,11 @@ class MessageCog(commands.Cog):
         progress_key: str,
         *,
         move_confirmed_by_user: bool = False,
+        reply_to: Optional[discord.Message] = None,
     ):
         """プロフィール本文らしい投稿 / 編集を評価"""
+        if reply_to is None:
+            reply_to = message
         cp["profile_message_id"] = message.id
 
         ok, fb = await evaluate_profile_with_ai(
@@ -2927,7 +2930,7 @@ class MessageCog(commands.Cog):
             cp["profile_filled_time"] = get_current_time_iso()
             cp["pending_inrate_confirmation"] = False
             cp["pending_move_confirmation"] = False
-            await message.reply("プロフィールありがとうございます。面接官が確認次第ご連絡します。")
+            await reply_to.reply("プロフィールありがとうございます。面接官が確認次第ご連絡します。")
 
             # 面接官通知 (07–23)
             if 7 <= datetime.now(JST).hour < 23:
@@ -2943,7 +2946,7 @@ class MessageCog(commands.Cog):
 
         # ----------- NG / 要確認 -----------
         else:
-            await message.reply(fb)
+            await reply_to.reply(fb)
 
             if "週3回以上" in fb:
                 cp["pending_inrate_confirmation"] = True
@@ -3029,7 +3032,13 @@ class MessageCog(commands.Cog):
                     try:
                         orig_profile_msg = await message.channel.fetch_message(cp["profile_message_id"])
                         # _process_profile を呼び出す際に、移住意思が確認されたことを伝える
-                        await self._process_profile(orig_profile_msg, cp, progress_key, move_confirmed_by_user=True)
+                        await self._process_profile(
+                            orig_profile_msg,
+                            cp,
+                            progress_key,
+                            move_confirmed_by_user=True,
+                            reply_to=message,
+                        )
                     except discord.NotFound:
                         await message.reply("元のプロフィールメッセージが見つかりませんでした。お手数ですが、再度プロフィール全体を投稿してください。")
                         update_candidate_status(cp, "プロフィール未記入")
