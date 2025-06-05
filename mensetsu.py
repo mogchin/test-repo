@@ -2564,6 +2564,7 @@ class EventCog(commands.Cog):
             'failed': False,
             'profile_message_id': None,
             'pending_inrate_confirmation': False,
+            'pending_move_confirmation': False,
         }
         await data_manager.save_data()
         request_dashboard_update(self.bot)
@@ -2907,6 +2908,8 @@ class MessageCog(commands.Cog):
         message: discord.Message,
         cp: Dict[str, Any],
         progress_key: str,
+        *,
+        move_confirmed_by_user: bool = False,
     ):
         """プロフィール本文らしい投稿 / 編集を評価"""
         cp["profile_message_id"] = message.id
@@ -2915,7 +2918,7 @@ class MessageCog(commands.Cog):
             message.content,
             debug=True,
             inrate_cleared=cp.get("pending_inrate_confirmation", False),
-            move_cleared=cp.get("pending_move_confirmation", False),
+            move_cleared=move_confirmed_by_user or not cp.get("pending_move_confirmation", False),
         )
 
         # ----------- OK -----------
