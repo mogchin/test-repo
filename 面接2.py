@@ -668,16 +668,26 @@ async def evaluate_profile_with_ai(
 1. **年齢が条件外**  
    → `募集要項に記載の通り、当サーバーでは18歳以上36歳以下の方を対象としております。…`（既存テンプレ）
 
-2. **日本語が困難**  
-   → 英文お断りテンプレ（既存）
-
-3. **海外在住で移住予定が未記載**  
+2. **海外在住で移住予定が未記載**  
    ※ このステップは `move_cleared==False` の場合のみ実行する  
    → `募集要項に記載の通り、原則として日本在住または6か月以内に日本へ移住予定の方を対象としております。半年以内に日本へ移住予定はございますか？`
 
+3. **日本語が困難**  
+   → Thank you very much for your interest and for taking the time to apply.
+
+We truly appreciate your interest in our server and were glad to hear from you.
+
+After careful consideration, however, we’ve determined that
+fluent Japanese communication is essential for participation 
+in our community.
+
+We’re very sorry to let you know that we won’t be able to move forward with your application this time. We hope for your kind understanding.
+
+Wishing you all the best in your future endeavors. 
+
 4. **イン率不足**  
    ※ `inrate_cleared==False` のときのみ  
-   → 週3日以上確認テンプレ
+   → 募集要項に記載の通り、当サーバーでは週3日以上の会議通話へのご参加をお願いしております。その点について問題はございませんでしょうか？
 
 5. **その他の未記入・不備**  
    → 不備リスト（箇条書き）
@@ -2554,6 +2564,7 @@ class EventCog(commands.Cog):
             'failed': False,
             'profile_message_id': None,
             'pending_inrate_confirmation': False,
+            'pending_move_confirmation': False,
         }
         await data_manager.save_data()
         request_dashboard_update(self.bot)
@@ -2897,6 +2908,8 @@ class MessageCog(commands.Cog):
         message: discord.Message,
         cp: Dict[str, Any],
         progress_key: str,
+        *,
+        move_confirmed_by_user: bool = False,
     ):
         """プロフィール本文らしい投稿 / 編集を評価"""
         cp["profile_message_id"] = message.id
@@ -2905,7 +2918,7 @@ class MessageCog(commands.Cog):
             message.content,
             debug=True,
             inrate_cleared=cp.get("pending_inrate_confirmation", False),
-            move_cleared=cp.get("pending_move_confirmation", False),
+            move_cleared=move_confirmed_by_user or not cp.get("pending_move_confirmation", False),
         )
 
         # ----------- OK -----------
