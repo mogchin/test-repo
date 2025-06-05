@@ -2912,6 +2912,8 @@ class MessageCog(commands.Cog):
         move_confirmed_by_user: bool = False,
     ):
         """プロフィール本文らしい投稿 / 編集を評価"""
+        # True if the candidate's relocation intent has already been confirmed
+        # or the confirmation step is unnecessary.
         cp["profile_message_id"] = message.id
 
         ok, fb = await evaluate_profile_with_ai(
@@ -2991,7 +2993,12 @@ class MessageCog(commands.Cog):
                     try:
                         orig_profile_msg = await message.channel.fetch_message(cp["profile_message_id"])
                         # イン率OKとして再度プロフィール全体を評価
-                        await self._process_profile(orig_profile_msg, cp, progress_key, move_confirmed_by_user=cp.get("pending_move_confirmation", False) is False and cp.get("profile_message_id") is not None)
+                        await self._process_profile(
+                            orig_profile_msg,
+                            cp,
+                            progress_key,
+                            move_confirmed_by_user=not cp.get("pending_move_confirmation", False),
+                        )
                     except discord.NotFound:
                         await message.reply("元のプロフィールメッセージが見つかりませんでした。お手数ですが、再度プロフィール全体を投稿してください。")
                         update_candidate_status(cp, "プロフィール未記入") # プロフ本文がないため
